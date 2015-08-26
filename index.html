@@ -80,20 +80,6 @@
             this.createShip();
         },
 
-        createPlanet: function () {
-            this.planet = new Sprite('planet');
-            this.planet.width = Settings.planetRadius * 2;
-            this.planet.height = Settings.planetRadius * 2;
-            this.planet.setAnchor({x: Settings.planetRadius, y: Settings.planetRadius});
-            this.planet.setXY(Core.width / 2, Core.height / 2);
-        },
-
-        createShip: function () {
-            this.ship = this.sprites.getImage(32, 160, 32, 32);
-            this.ship.setAnchor({x: 16, y: 16});
-            this.ship.setGameCoords(0, Settings.orbitRadius);
-        },
-
         reset: function () {
             this.shipSpeed = Settings.baseShipSpeed;
             this.energy = Settings.maxEnergy;
@@ -246,8 +232,25 @@
             Camera.fade({r: 0, g: 0, b: 0, a: 1}, {r: 0, g: 0, b: 0, a: 0}, 1);
         },
 
+        createPlanet: function () {
+            this.planet = new Sprite('planet');
+            this.planet.width = Settings.planetRadius * 2;
+            this.planet.height = Settings.planetRadius * 2;
+            this.planet.setAnchor({x: Settings.planetRadius, y: Settings.planetRadius});
+            this.planet.setXY(Core.width / 2, Core.height / 2);
+            this.planet.recalculate();
+        },
+
+        createShip: function () {
+            this.ship = this.sprites.getImage(32, 160, 32, 32);
+            this.ship.setAnchor({x: 16, y: 16});
+            this.ship.setGameCoords(0, Settings.orbitRadius);
+        },
+
         createBullet: function () {
             var bullet = this.sprites.getImage(0, 128, 32, 32);
+            bullet.useBoundingBox = false;
+            bullet.radius = 4;
             bullet.width = 16;
             bullet.height = 16;
             bullet.setAnchor({x: 8, y: 8});
