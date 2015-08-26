@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0' name='viewport'/>
+    <title>Planetary Wars Prototype</title>
+    <script src="base.js"></script>
+    <script src="micron.js"></script>
+</head>
+<body style="background-color: black;">
+<script>
+    function deg2rad(deg) {
+        return deg * (Math.PI / 180);
+    }
+
+    var Settings = {
+        planetRadius: 100,
+        maxEnergy: 3,
+        baseShipSpeed: 150,
+        enemiesSpawnFrequency: 0.75,
+        bulletSpeed: 300,
+        energyGain: 1,
+        orbitRadius: 100,
+        debug: false
+    };
+
+    Sprite.prototype.gameCoords = {x: 0, y: 0};
+    Sprite.prototype.baseAngle = 0;
+
+    Sprite.prototype.anchor = {x: 0, y: 0};
+    Sprite.prototype.setAnchor = function (anchor) {
+        this.anchor = anchor;
+    };
+
+    Sprite.prototype.setGameCoords = function (gameX, gameY) {
+        var cx = Core.width / 2;
+        var cy = Core.height / 2;
+        var rad = deg2rad(gameX);
+        var x = cx + Math.cos(rad) * (Settings.planetRadius + gameY);
+        var y = cy + Math.sin(rad) * (Settings.planetRadius + gameY);
+        this.angle = deg2rad(this.baseAngle + gameX);
+
+        this.gameCoords = {x: gameX, y: gameY};
+        this.setXY(x, y);
+    };
+
+    Sprite.prototype.setXY = function (x, y) {
+        this.x = x - this.anchor.x;
+        this.y = y - this.anchor.y;
+    };
+
+    var StateGame = State.extend({
+        sprites: null,
+        ship: null,
+        planet: null,
+        enemies: [],
+        bullets: [],
+        score: 0,
+        energy: Settings.maxEnergy,
+        shipSpeed: Settings.baseShipSpeed,
+        timeSinceSpawn: Settings.enemiesSpawnFrequency,
+        fired: false,
+        isGameOver: false,
+        highScore: null,
+        gameStarted: false,
+
+        constructor: function () {
+            this.callParent();
+            Graphics.pixelify = true;
+            this.sprites = new Atlas('sprites');
+        },
+
+        init: function () {
+            this.cameraFade();
+            this.reset();
+            this.highScore = this.getHighScore();
+            this.createPlanet();
+            this.createShip();
+        },
+
+        createPlanet: function () {
+            this.planet = new Sprite('planet');
+            this.planet.width = Settings.planetRadius * 2;
+            this.planet.height = Settings.planetRadius * 2;
+            this.planet.setAnchor({x: Settings.planetRadius, y: Settings.planetRadius});
+            this.planet.setXY(Core.width / 2, Core.height / 2);
+        },
+
+        createShip: function () {
+            this.ship = this.sprites.getImage(32, 160, 32, 32);
+            this.ship.setAnchor({x: 16, y: 16});
+            this.ship.setGameCoords(0, Settings.orbitRadius);
+        },
+
+        reset: function () {
+            this.shipSpeed = Settings.baseShipSpeed;
+            this.energy = Settings.maxEnergy;
+            this.score = 0;
+            this.timeSinceSpawn = Settings.enemiesSpawnFrequency;
+            this.bullets = [];
+            this.enemies = [];
+            Input.isClick = false;
+            this.isGameOver = false;
+            this.gameStarted = false;
+            this.spawnEnemy();
+        },
+
+        update: function (delta) {
+            this.callParent(delta);
+            this.isGameOver ? this.updateGameOver(delta) : this.updateGame(delta);
+        },
+
+        updateGameOver: function (delta) {
+            if (Input.isMousePressed()) {
+                this.cameraFade();
+                this.reset();
+            }
+        },
+
+        updateGame: function (delta) {
+            this.handleInput();
+            this.updateShip(delta);
+            this.updateBullets(delta);
+            this.updateScore(delta);
+            if (this.gameStarted) {
+                this.updateEnemies(delta);
+                this.updateEnergy(delta);
+            }
+        },
+
+        handleInput: function () {
+            if (Input.isMousePressed() && !this.fired) {
+                this.gameStarted = true;
+                this.fired = true;
+                this.fireWeapon();
+            }
+            if (Input.isMouseReleased()) {
+                this.fired = false;
+            }
+        },
+
+        updateShip: function (delta) {
+            this.shipSpeed += delta;
+            this.ship.setGameCoords(this.ship.gameCoords.x + delta * this.shipSpeed, this.ship.gameCoords.y);
+            this.ship.update(delta);
+        },
+
+        updateBullets: function (delta) {
+            i = this.bullets.length;
+            while (i--) {
+                this.bullets[i].setGameCoords(this.bullets[i].gameCoords.x, this.bullets[i].gameCoords.y - delta * Settings.bulletSpeed);
+                if (this.bullets[i].gameCoords.y <= 0) {
+                    this.explode(i);
+                } else {
+                    this.bullets[i].update(delta);
+                }
+            }
+        },
+
+        updateEnemies: function (delta) {
+            this.timeSinceSpawn += delta;
+            if (this.timeSinceSpawn > Settings.enemiesSpawnFrequency) {
+                this.spawnEnemy();
+                this.timeSinceSpawn = 0;
+            }
+        },
+
+        spawnEnemy: function () {
+            this.enemies.push(this.createEnemy());
+        },
+
+        updateEnergy: function (delta) {
+            this.energy -= delta;
+            if (this.energy <= 0) {
+                this.gameOver();
+            }
+        },
+
+        updateScore: function (delta) {
+            if (this.highScore < this.score) {
+                this.highScore = this.score;
+            }
+        },
+
+        draw: function () {
+            this.callParent();
+            this.clearScreen();
+
+            this.drawWorld();
+            this.drawUI();
+            if (this.isGameOver) this.drawGameOver();
+            if (Settings.debug) this.drawDebug();
+        },
+
+        clearScreen: function () {
+            Graphics.drawFullScreenRect(0, 0, 0, 1.0);
+        },
+
+        drawWorld: function () {
+            this.planet.draw();
+            this.ship.draw();
+            this.enemies.forEach(function (enemy, index, array) {
+                enemy.draw();
+            });
+            this.bullets.forEach(function (bullet, index, array) {
+                bullet.draw();
+            });
+        },
+
+        drawUI: function () {
+            this.drawEnergy();
+            this.drawScore();
+        },
+
+        drawEnergy: function () {
+            var value = this.energy / Settings.maxEnergy;
+            Graphics.drawRect(20, 50, value * (Core.width - 40), 10, 1 - value, value, 0, 1);
+        },
+
+        drawScore: function () {
+            Graphics.drawText(this.score, 20, 20, 1, 1, 1, 1, 24, 'Arial');
+            Graphics.drawText("BEST: " + this.highScore, 350, 20, 1, 1, 1, 1, 24, 'Arial');
+        },
+
+        drawGameOver: function () {
+            Graphics.drawText("GAME OVER", 150, 200, 1, 0.5, 0, 1, 32, 'Arial');
+            if (this.highScore == this.score && this.score != 0) {
+                Graphics.drawText("HIGH SCORE", Math.random() * 10 + 140, Math.random() * 10 + 290, 0, 1, 0, 1, 32, 'Arial');
+            }
+        },
+
+        drawDebug: function () {
+            this.planet.drawDebug();
+            this.ship.drawDebug();
+            this.enemies.forEach(function (enemy, index, array) {
+                enemy.drawDebug();
+            });
+            this.bullets.forEach(function (bullet, index, array) {
+                bullet.drawDebug();
+            });
+        },
+
+        cameraFade: function () {
+            Camera.fade({r: 0, g: 0, b: 0, a: 1}, {r: 0, g: 0, b: 0, a: 0}, 1);
+        },
+
+        createBullet: function () {
+            var bullet = this.sprites.getImage(0, 128, 32, 32);
+            bullet.width = 16;
+            bullet.height = 16;
+            bullet.setAnchor({x: 8, y: 8});
+            return bullet;
+        },
+
+        createEnemy: function () {
+            var enemy = this.sprites.getImage(96, 224, 32, 32);
+            enemy.useBoundingBox = false;
+            enemy.setAnchor({x: 16, y: 16});
+            enemy.baseAngle = 180;
+            enemy.setGameCoords((Math.random() * 36).toFixed() * 10, 0);
+            return enemy;
+        },
+
+        fireWeapon: function () {
+            var bullet = this.createBullet();
+            bullet.setGameCoords(this.ship.gameCoords.x, this.ship.gameCoords.y);
+            this.bullets.push(bullet);
+        },
+
+        explode: function (bulletIndex) {
+            var hit = false;
+            var i = this.enemies.length;
+            while (i--) {
+                if (this.enemies[i].collides(this.bullets[bulletIndex])) {
+                    hit = true;
+                    this.destroyEnemy(i);
+                }
+            }
+            this.bullets.splice(bulletIndex, 1);
+            if (!hit) this.gameOver();
+        },
+
+        destroyEnemy: function (index) {
+            this.enemies.splice(index, 1);
+            this.score++;
+            this.energy += Settings.energyGain;
+            if (this.energy > Settings.maxEnergy) this.energy = Settings.maxEnergy;
+        },
+
+        gameOver: function () {
+            this.isGameOver = true;
+            if (this.highScore == this.score) {
+                Core.saveToStorage("highscore", this.score);
+            }
+        },
+
+        getHighScore: function () {
+            var highscore = Core.readFromStorage('highscore');
+            return highscore ? highscore : 0;
+        }
+    });
+
+    Core.init(480, 640);
+    Core.addAsset(['planet', 'img/planet.png']);
+    Core.addAsset(['sprites', 'img/sprites.png']);
+    Core.setState(new StateGame());
+    Core.loadAndRun();
+</script>
+</body>
+</html>
