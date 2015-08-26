@@ -259,8 +259,20 @@
             enemy.useBoundingBox = false;
             enemy.setAnchor({x: 16, y: 16});
             enemy.baseAngle = 180;
-            enemy.setGameCoords((Math.random() * 36).toFixed() * 10, 0);
+
+            do {
+                var x = (Math.random() * 36).toFixed() * 10
+            } while (!this.validEnemyPosition(x));
+            enemy.setGameCoords(x, 0);
+
             return enemy;
+        },
+
+        validEnemyPosition: function(x) {
+            for(var i = 0; i < this.enemies.length; i++) {
+                if (this.enemies[i].gameCoords.x == x) return false;
+            }
+            return true;
         },
 
         fireWeapon: function () {
