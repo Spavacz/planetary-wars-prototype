@@ -77,16 +77,18 @@
         updateAge: function (delta) {
             this.age += delta;
 
-            if (this.age > 5.6) {
+            if (this.age > 6) {
                 this.uv.x = 64;
                 this.uv.y = 32;
                 this.onExplode(this);
-            } else if (this.age > 5.3) {
+            } else if (this.age > 5.8) {
                 this.uv.x = 32;
                 this.uv.y = 32;
-            } else if (this.age > 5) {
+                this.shake();
+            } else if (this.age > 5.6) {
                 this.uv.x = 0;
                 this.uv.y = 32;
+                this.shake();
             } else if (this.age > 4) {
                 this.uv.x = 64;
                 this.shake();
@@ -113,7 +115,6 @@
             GAME: 1,
             GAMEOVER: 2
         },
-        sprites: null,
         ship: null,
         planet: null,
         enemies: [],
@@ -129,7 +130,6 @@
         constructor: function () {
             this.callParent();
             Graphics.pixelify = true;
-            this.sprites = new Atlas('sprites');
         },
 
         init: function () {
@@ -163,7 +163,6 @@
                 this.cameraFade();
                 this.reset();
             }
-            this.updateShip(delta);
             this.updateEnemies(delta);
         },
 
@@ -246,6 +245,7 @@
         },
 
         drawWorld: function () {
+            Graphics.drawSprite(Graphics.getImage('bg'), 0, 0, Core.width, Core.height, 0, 1, 1, 1);
             this.planet.draw();
             this.ship.draw();
             this.enemies.forEach(function (enemy, index, array) {
@@ -309,17 +309,15 @@
         },
 
         createShip: function () {
-            this.ship = this.sprites.getImage(32, 160, 32, 32);
+            this.ship = new Sprite('ship');
             this.ship.setAnchor({x: 16, y: 16});
+            this.baseAngle = 90;
             this.ship.setGameCoords(0, Settings.orbitRadius);
         },
 
         createBullet: function () {
-            var bullet = this.sprites.getImage(0, 128, 32, 32);
+            var bullet = new Sprite('bullet');
             bullet.useBoundingBox = false;
-            bullet.radius = 4;
-            bullet.width = 16;
-            bullet.height = 16;
             bullet.setAnchor({x: 8, y: 8});
             return bullet;
         },
@@ -389,8 +387,10 @@
     });
 
     Core.init(480, 640);
+    Core.addAsset(['bg', 'img/bg.png']);
     Core.addAsset(['planet', 'img/planet.png']);
-    Core.addAsset(['sprites', 'img/sprites.png']);
+    Core.addAsset(['ship', 'img/ship.png']);
+    Core.addAsset(['bullet', 'img/bullet.png']);
     Core.addAsset(['enemy', 'img/enemy.png']);
     Core.setState(new StateGame());
     Core.loadAndRun();
