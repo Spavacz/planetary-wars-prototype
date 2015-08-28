@@ -17,7 +17,6 @@
 
     var Settings = {
         planetRadius: 100,
-        maxEnergy: 3,
         baseShipSpeed: 150,
         enemiesSpawnFrequency: 0.75,
         bulletSpeed: 300,
@@ -51,7 +50,69 @@
         this.y = y - this.anchor.y;
     };
 
+    var Enemy = Sprite.extend({
+        age: 0,
+        onExplode: null,
+        spritePos: {x: this.x, y: this.y},
+
+        constructor: function (path, onExplode) {
+            this.callParent(path);
+            this.onExplode = onExplode;
+            this.width = 32;
+            this.height = 32;
+            this.uv.w = 32;
+            this.uv.h = 32;
+        },
+
+        update: function (delta, state) {
+            this.callParent(delta);
+            this.updateSprite(delta);
+            if (state != 0) this.updateAge(delta);
+        },
+
+        updateSprite: function (delta) {
+            this.spritePos = {x: this.x, y: this.y};
+        },
+
+        updateAge: function (delta) {
+            this.age += delta;
+
+            if (this.age > 5.6) {
+                this.uv.x = 64;
+                this.uv.y = 32;
+                this.onExplode(this);
+            } else if (this.age > 5.3) {
+                this.uv.x = 32;
+                this.uv.y = 32;
+            } else if (this.age > 5) {
+                this.uv.x = 0;
+                this.uv.y = 32;
+            } else if (this.age > 4) {
+                this.uv.x = 64;
+                this.shake();
+            } else if (this.age > 2) {
+                this.uv.x = 32;
+            } else {
+                this.uv.x = 0;
+            }
+        },
+
+        draw: function () {
+            Graphics.drawSpriteCropped(this.img, this.spritePos.x, this.spritePos.y, this.width, this.height, this.angle, this.scale.x, this.scale.y, this.alpha, this.uv.x, this.uv.y, this.uv.w, this.uv.h);
+        },
+
+        shake: function () {
+            this.spritePos.x += (Math.random() - 0.5) * 5;
+            this.spritePos.y += (Math.random() - 0.5) * 5;
+        }
+    });
+
     var StateGame = State.extend({
+        consts: {
+            INTRO: 0,
+            GAME: 1,
+            GAMEOVER: 2
+        },
         sprites: null,
         ship: null,
         planet: null,
@@ -62,9 +123,8 @@
         shipSpeed: Settings.baseShipSpeed,
         timeSinceSpawn: Settings.enemiesSpawnFrequency,
         fired: false,
-        isGameOver: false,
         highScore: null,
-        gameStarted: false,
+        currentState: 0,
 
         constructor: function () {
             this.callParent();
@@ -84,25 +144,27 @@
             this.shipSpeed = Settings.baseShipSpeed;
             this.energy = Settings.maxEnergy;
             this.score = 0;
-            this.timeSinceSpawn = Settings.enemiesSpawnFrequency;
+            this.timeSinceSpawn = 0;
             this.bullets = [];
             this.enemies = [];
             Input.isClick = false;
-            this.isGameOver = false;
-            this.gameStarted = false;
+            this.currentState = this.consts.INTRO;
             this.spawnEnemy();
         },
 
         update: function (delta) {
             this.callParent(delta);
-            this.isGameOver ? this.updateGameOver(delta) : this.updateGame(delta);
+            this.currentState == this.consts.GAMEOVER ? this.updateGameOver(delta) : this.updateGame(delta);
         },
 
         updateGameOver: function (delta) {
-            if (Input.isMousePressed()) {
+            if (Input.isMousePressed() || Input.isKeyPressed(Input.KEY_SPACE)) {
+                this.fired = true;
                 this.cameraFade();
                 this.reset();
             }
+            this.updateShip(delta);
+            this.updateEnemies(delta);
         },
 
         updateGame: function (delta) {
@@ -110,19 +172,17 @@
             this.updateShip(delta);
             this.updateBullets(delta);
             this.updateScore(delta);
-            if (this.gameStarted) {
-                this.updateEnemies(delta);
-                this.updateEnergy(delta);
-            }
+            if (this.currentState == this.consts.GAME) this.updateSpawnEnemy(delta);
+            this.updateEnemies(delta);
         },
 
         handleInput: function () {
-            if (Input.isMousePressed() && !this.fired) {
-                this.gameStarted = true;
+            if ((Input.isMousePressed() || Input.isKeyPressed(Input.KEY_SPACE)) && !this.fired) {
                 this.fired = true;
+                this.currentState = this.consts.GAME;
                 this.fireWeapon();
             }
-            if (Input.isMouseReleased()) {
+            if (Input.isMouseReleased() && !Input.isKeyPressed(Input.KEY_SPACE)) {
                 this.fired = false;
             }
         },
@@ -145,23 +205,23 @@
             }
         },
 
-        updateEnemies: function (delta) {
+        updateSpawnEnemy: function (delta) {
             this.timeSinceSpawn += delta;
             if (this.timeSinceSpawn > Settings.enemiesSpawnFrequency) {
-                this.spawnEnemy();
                 this.timeSinceSpawn = 0;
+                this.spawnEnemy();
             }
+        },
+
+        updateEnemies: function (delta) {
+            self = this;
+            this.enemies.forEach(function (enemy, key, array) {
+                enemy.update(delta, self.currentState);
+            });
         },
 
         spawnEnemy: function () {
             this.enemies.push(this.createEnemy());
-        },
-
-        updateEnergy: function (delta) {
-            this.energy -= delta;
-            if (this.energy <= 0) {
-                this.gameOver();
-            }
         },
 
         updateScore: function (delta) {
@@ -175,8 +235,9 @@
             this.clearScreen();
 
             this.drawWorld();
-            this.drawUI();
-            if (this.isGameOver) this.drawGameOver();
+            if (this.currentState == this.consts.INTRO) this.drawIntro();
+            else this.drawUI();
+            if (this.currentState == this.consts.GAMEOVER) this.drawGameOver();
             if (Settings.debug) this.drawDebug();
         },
 
@@ -196,24 +257,30 @@
         },
 
         drawUI: function () {
-            this.drawEnergy();
             this.drawScore();
-        },
-
-        drawEnergy: function () {
-            var value = this.energy / Settings.maxEnergy;
-            Graphics.drawRect(20, 50, value * (Core.width - 40), 10, 1 - value, value, 0, 1);
+            this.drawHighscore();
         },
 
         drawScore: function () {
-            Graphics.drawText(this.score, 20, 20, 1, 1, 1, 1, 24, 'Arial');
-            Graphics.drawText("BEST: " + this.highScore, 350, 20, 1, 1, 1, 1, 24, 'Arial');
+            if (this.score) {
+                Graphics.drawText(this.score, Core.width / 2, Core.height / 2, 0, 0, 0, 1, 68, 'Arial');
+            }
+        },
+
+        drawHighscore: function () {
+            Graphics.drawText("BEST: " + this.highScore, Core.width / 2, 20, 1, 1, 1, 1, 24, 'Arial');
+        },
+
+        drawIntro: function () {
+            Graphics.drawText("Planetary Wars", Core.width / 2, Core.height / 2 - 150, 1, 1, 1, 1, 48, 'Arial');
+            Graphics.drawText("TAP TO FIRE", Core.width / 2, Core.height / 2 + 150, 1, 1, 1, .4, 24, 'Arial');
+            Graphics.drawText("Copyright Scalac", Core.width / 2, Core.height - 30, .8, .8, .8, 1, 10, 'Arial');
         },
 
         drawGameOver: function () {
-            Graphics.drawText("GAME OVER", 150, 200, 1, 0.5, 0, 1, 32, 'Arial');
+            Graphics.drawText("Game Over", Core.width / 2, Core.height / 2 - 150, .7, 0, 0, 1, 48, 'Arial');
             if (this.highScore == this.score && this.score != 0) {
-                Graphics.drawText("HIGH SCORE", Math.random() * 10 + 140, Math.random() * 10 + 290, 0, 1, 0, 1, 32, 'Arial');
+                Graphics.drawText("HIGH SCORE", Math.random() * 5 + Core.width / 2, Math.random() * 5 + Core.height / 2 - 100, 0, .8, 0, 1, 32, 'Arial');
             }
         },
 
@@ -258,10 +325,14 @@
         },
 
         createEnemy: function () {
-            var enemy = this.sprites.getImage(96, 224, 32, 32);
+            var self = this;
+            var enemy = new Enemy('enemy', function () {
+                self.gameOver();
+            });
             enemy.useBoundingBox = false;
+            enemy.radius = 16;
             enemy.setAnchor({x: 16, y: 16});
-            enemy.baseAngle = 180;
+            enemy.baseAngle = 90;
 
             do {
                 var x = (Math.random() * 36).toFixed() * 10
@@ -271,8 +342,8 @@
             return enemy;
         },
 
-        validEnemyPosition: function(x) {
-            for(var i = 0; i < this.enemies.length; i++) {
+        validEnemyPosition: function (x) {
+            for (var i = 0; i < this.enemies.length; i++) {
                 if (this.enemies[i].gameCoords.x == x) return false;
             }
             return true;
@@ -305,9 +376,9 @@
         },
 
         gameOver: function () {
-            this.isGameOver = true;
+            this.currentState = this.consts.GAMEOVER;
             if (this.highScore == this.score) {
-                Core.saveToStorage("highscore", this.score);
+                Core.saveToStorage('highscore', this.score);
             }
         },
 
@@ -320,6 +391,7 @@
     Core.init(480, 640);
     Core.addAsset(['planet', 'img/planet.png']);
     Core.addAsset(['sprites', 'img/sprites.png']);
+    Core.addAsset(['enemy', 'img/enemy.png']);
     Core.setState(new StateGame());
     Core.loadAndRun();
 </script>

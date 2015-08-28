@@ -1033,9 +1033,9 @@ Graphics = Base.extend({
     },
     drawText: function(text, x, y, r, g, b, a, size, font) {
         this._startDraw("fill", r, g, b, a);
-        this.context.font = size + "px " + font;
-        this.context.textAlign = "left";
-        this.context.textBaseline = "top";
+        this.context.font = "bold" + size + "px " + font;
+        this.context.textAlign = "center";
+        this.context.textBaseline = "middle";
         this.context.fillText(text, x, y);
     },
     drawRect: function(x, y, width, height, r, g, b, a, mode) {
